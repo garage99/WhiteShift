@@ -1,0 +1,5 @@
+Pillow>=10.0,<13
+PySide6>=6.6,<7
+numpy>=2.0,<3
+PhotoshopAPI>=0.9,<1
+psd-tools>=1.10,<2
