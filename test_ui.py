@@ -11,6 +11,7 @@ from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QApplication
 
 from png_black_converter.app import MainWindow
+from png_black_converter.theme import ACCENT, DARK, LIGHT, apply_theme
 
 
 class PreviewTest(unittest.TestCase):
@@ -62,6 +63,35 @@ class PreviewTest(unittest.TestCase):
         self.assertTrue(window.profile_button.isVisibleTo(window))
         window.output_mode.setCurrentIndex(window.output_mode.findData("RGB"))
         self.assertFalse(window.profile_button.isVisible())
+        window.close()
+
+    def test_theme_lives_at_application_level(self):
+        window = MainWindow()
+        # Widgets carry object names only; all styling comes from theme.py.
+        self.assertFalse(window.styleSheet())
+        self.assertEqual(window.before.objectName(), "previewCard")
+        window.close()
+
+    def test_theme_has_light_and_dark_variants(self):
+        try:
+            apply_theme(self.app, dark=False)
+            self.assertIn(ACCENT, self.app.styleSheet())
+            self.assertIn(LIGHT["window"], self.app.styleSheet())
+            apply_theme(self.app, dark=True)
+            self.assertIn(DARK["window"], self.app.styleSheet())
+            self.assertNotIn(LIGHT["window"], self.app.styleSheet())
+        finally:
+            self.app.setStyleSheet("")
+
+    def test_file_count_badge(self):
+        window = MainWindow()
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ("a.png", "b.png"):
+                Image.new("RGBA", (2, 2), (255, 255, 255, 255)).save(Path(folder) / name)
+            window.add_files([str(Path(folder) / n) for n in ("a.png", "b.png")])
+            self.assertEqual(window.count_badge.text(), "2")
+            window.remove_selected()
+            self.assertEqual(window.count_badge.text(), "1")
         window.close()
 
 

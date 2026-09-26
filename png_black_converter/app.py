@@ -18,46 +18,20 @@ try:
         ConvertedImage, convert_image, default_cmyk_profile, is_cmyk_profile,
         output_name, save_converted,
     )
+    from .theme import apply_theme
 except ImportError:  # Direct script execution and PyInstaller entry point.
     try:
         from png_black_converter.core import (
             ConvertedImage, convert_image, default_cmyk_profile, is_cmyk_profile,
             output_name, save_converted,
         )
+        from png_black_converter.theme import apply_theme
     except ImportError:
         from core import (
             ConvertedImage, convert_image, default_cmyk_profile, is_cmyk_profile,
             output_name, save_converted,
         )
-
-
-STYLE = """
-QWidget#appRoot { background: #f3f5f8; color: #20242b; font-size: 13px; }
-QWidget#settingsPanel, QFrame#previewCard {
-    background: #ffffff; border: 1px solid #d9dee7; border-radius: 10px;
-}
-QLabel#previewTitle { font-size: 15px; font-weight: 700; color: #252a32; }
-QListWidget {
-    background: #f8f9fb; border: 1px solid #e5e8ee; border-radius: 6px;
-    padding: 4px; outline: none;
-}
-QListWidget::item { min-height: 30px; padding: 3px 7px; border-radius: 4px; }
-QListWidget::item:selected { color: #ffffff; background: #316fe8; }
-QPushButton { min-height: 32px; padding: 0 13px; border-radius: 7px; font-weight: 600; }
-QPushButton#secondaryButton { color: #26303d; background: #ffffff; border: 1px solid #c7cfdb; }
-QPushButton#secondaryButton:hover { background: #f4f7fb; border-color: #9eabc0; }
-QPushButton#primaryButton { color: #ffffff; background: #316fe8; border: 1px solid #2864d8; }
-QPushButton#primaryButton:hover { background: #2864d8; }
-QPushButton#resetButton { color: #a23535; background: #fff7f7; border: 1px solid #d9a6a6; }
-QPushButton#resetButton:hover { background: #ffe9e9; border-color: #b85c5c; }
-QSlider::groove:horizontal { height: 4px; border-radius: 2px; background: #d9dfe8; }
-QSlider::sub-page:horizontal { background: #4f7ee8; border-radius: 2px; }
-QSlider::handle:horizontal {
-    width: 16px; margin: -6px 0; border-radius: 8px;
-    background: #ffffff; border: 2px solid #4f7ee8;
-}
-QGraphicsView { border: 1px solid #e5e8ee; border-radius: 6px; }
-"""
+        from theme import apply_theme
 
 
 class DropList(QListWidget):
@@ -160,10 +134,17 @@ class Preview(QFrame):
         super().__init__()
         self.setObjectName("previewCard")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setContentsMargins(14, 12, 14, 14)
+        layout.setSpacing(10)
+        header = QHBoxLayout()
         heading = QLabel(title)
         heading.setObjectName("previewTitle")
-        layout.addWidget(heading)
+        header.addWidget(heading)
+        header.addStretch()
+        note = QLabel("72 dpi相当")
+        note.setObjectName("hintLabel")
+        header.addWidget(note)
+        layout.addLayout(header)
         self.view = PreviewView()
         self.view.setMinimumSize(280, 260)
         layout.addWidget(self.view, 1)
@@ -191,7 +172,8 @@ class MainWindow(QMainWindow):
         choose = QPushButton("PNG / JPEG / PSDを選択")
         choose.setObjectName("secondaryButton")
         choose.clicked.connect(self.choose_files)
-        remove = QPushButton("選択を削除")
+        remove = QPushButton("削除")
+        remove.setToolTip("一覧で選択中のファイルを外します")
         remove.setObjectName("resetButton")
         remove.clicked.connect(self.remove_selected)
         self.toggle = QCheckBox("変更箇所をシアンで確認")
@@ -209,63 +191,110 @@ class MainWindow(QMainWindow):
         )
         self.cmyk_profile = Path(saved_profile)
         self.profile_label = QLabel()
+        self.profile_label.setObjectName("profileLabel")
         self.profile_label.setWordWrap(True)
         profile_button = QPushButton("CMYKプロファイルを選択")
         profile_button.setObjectName("secondaryButton")
         profile_button.clicked.connect(self.choose_cmyk_profile)
         self.profile_button = profile_button
-        export = QPushButton("書き出し")
+        export = QPushButton("すべて書き出し")
         export.setObjectName("primaryButton")
         export.clicked.connect(self.export_all)
         self.status = QLabel("PNG、JPEG、PSDをドロップするか選択してください")
+        self.status.setObjectName("noteLabel")
+        self.status.setWordWrap(True)
 
-        left = QWidget()
+        left = QFrame()
         left.setObjectName("settingsPanel")
+        left.setMinimumWidth(260)
         left_layout = QVBoxLayout(left)
-        left_layout.addWidget(QLabel("ファイル一覧（複数可）"))
-        left_layout.addWidget(self.list)
-        left_layout.addWidget(choose)
-        left_layout.addWidget(remove)
-        left_layout.addWidget(QLabel("出力カラーモード"))
+        left_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout.setSpacing(10)
+        files_header = QHBoxLayout()
+        files_title = QLabel("ファイル")
+        files_title.setObjectName("sectionTitle")
+        files_header.addWidget(files_title)
+        files_header.addStretch()
+        self.count_badge = QLabel("0")
+        self.count_badge.setObjectName("countBadge")
+        files_header.addWidget(self.count_badge)
+        left_layout.addLayout(files_header)
+        drop_hint = QLabel("ここへドロップ（複数可）")
+        drop_hint.setObjectName("hintLabel")
+        left_layout.addWidget(drop_hint)
+        left_layout.addWidget(self.list, 1)
+        file_buttons = QHBoxLayout()
+        file_buttons.setSpacing(8)
+        file_buttons.addWidget(choose, 1)
+        file_buttons.addWidget(remove)
+        left_layout.addLayout(file_buttons)
+        left_layout.addSpacing(6)
+        left_layout.addWidget(self._divider())
+        left_layout.addSpacing(2)
+        output_title = QLabel("書き出し設定")
+        output_title.setObjectName("sectionTitle")
+        left_layout.addWidget(output_title)
+        mode_label = QLabel("出力カラーモード")
+        mode_label.setObjectName("noteLabel")
+        left_layout.addWidget(mode_label)
         left_layout.addWidget(self.output_mode)
         left_layout.addWidget(self.profile_button)
         left_layout.addWidget(self.profile_label)
+        left_layout.addSpacing(4)
         left_layout.addWidget(export)
 
         previews = QWidget()
         preview_layout = QVBoxLayout(previews)
-        toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel("ズーム"))
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(12)
+        toolbar_card = QFrame()
+        toolbar_card.setObjectName("toolbarCard")
+        toolbar = QHBoxLayout(toolbar_card)
+        toolbar.setContentsMargins(14, 8, 14, 8)
+        toolbar.setSpacing(10)
+        zoom_title = QLabel("ズーム")
+        zoom_title.setObjectName("noteLabel")
+        toolbar.addWidget(zoom_title)
         self.zoom = QSlider(Qt.Horizontal)
         self.zoom.setRange(100, 800)
         self.zoom.setSingleStep(25)
         self.zoom.setPageStep(100)
         self.zoom.setValue(100)
-        self.zoom.setFixedWidth(220)
+        self.zoom.setFixedWidth(200)
         self.zoom_label = QLabel("100%")
+        self.zoom_label.setObjectName("valueBadge")
+        self.zoom_label.setMinimumWidth(44)
         toolbar.addWidget(self.zoom)
         toolbar.addWidget(self.zoom_label)
+        toolbar.addSpacing(8)
+        toolbar.addWidget(self.toggle)
         toolbar.addStretch()
-        toolbar.addWidget(QLabel("画像をドラッグして移動・ホイールでズーム"))
+        drag_hint = QLabel("ドラッグで移動・ホイールでズーム")
+        drag_hint.setObjectName("hintLabel")
+        toolbar.addWidget(drag_hint)
         panes = QHBoxLayout()
-        self.before = Preview("元画像（72 dpi相当）")
-        self.after = Preview("処理後（72 dpi相当）")
+        panes.setSpacing(12)
+        self.before = Preview("元画像")
+        self.after = Preview("処理後")
         panes.addWidget(self.before)
         panes.addWidget(self.after)
-        preview_layout.addLayout(toolbar)
-        preview_layout.addLayout(panes)
-        preview_layout.addWidget(self.toggle)
-        preview_layout.addWidget(self.status)
+        preview_layout.addWidget(toolbar_card)
+        preview_layout.addLayout(panes, 1)
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(4, 0, 4, 0)
+        status_row.addWidget(self.status)
+        preview_layout.addLayout(status_row)
 
         splitter = QSplitter()
         splitter.addWidget(left)
         splitter.addWidget(previews)
-        splitter.setSizes([270, 1130])
+        splitter.setSizes([290, 1110])
         splitter.setStretchFactor(1, 1)
+        splitter.setChildrenCollapsible(False)
         root = QWidget()
         root.setObjectName("appRoot")
         root_layout = QVBoxLayout(root)
-        root_layout.setContentsMargins(14, 14, 14, 10)
+        root_layout.setContentsMargins(16, 16, 16, 14)
         root_layout.addWidget(splitter)
         self.setCentralWidget(root)
         self.setAcceptDrops(True)
@@ -277,8 +306,20 @@ class MainWindow(QMainWindow):
         self.after.view.wheel_zoom.connect(self._wheel_zoom)
         self.before.view.center_changed.connect(self.after.view.set_center)
         self.after.view.center_changed.connect(self.before.view.set_center)
-        self.setStyleSheet(STYLE)
+        # Colours and shapes come from the application-wide theme (theme.py);
+        # widgets only carry object names, never their own stylesheets.
+        self.list.model().rowsInserted.connect(self._update_count)
+        self.list.model().rowsRemoved.connect(self._update_count)
         self._output_mode_changed()
+
+    @staticmethod
+    def _divider() -> QFrame:
+        line = QFrame()
+        line.setObjectName("divider")
+        return line
+
+    def _update_count(self, *_):
+        self.count_badge.setText(str(self.list.count()))
 
     def eventFilter(self, watched, event):
         if (
@@ -421,6 +462,7 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("WhiteShift")
+    apply_theme(app)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
