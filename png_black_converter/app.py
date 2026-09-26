@@ -459,6 +459,21 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "完了", f"{len(self.paths)}枚を書き出しました。\n{destination_dir}")
 
 
+def _smoke_test_psd():
+    import tempfile
+    import numpy as np
+    with tempfile.TemporaryDirectory() as folder:
+        preview = Image.new("RGBA", (2, 2), (252, 252, 252, 255))
+        converted = ConvertedImage(
+            preview, preview, preview, 4, {}, "PSD", "RGB",
+            np.full((3, 2, 2), 252, dtype=np.uint8), np.full((2, 2), 255, dtype=np.uint8),
+        )
+        target = Path(folder) / "smoke-.psd"
+        save_converted(converted, target)
+        if target.stat().st_size == 0:
+            raise RuntimeError("PSD smoke test wrote an empty file")
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("WhiteShift")
@@ -466,9 +481,11 @@ def main():
     window = MainWindow()
     window.show()
     if "--smoke-test" in sys.argv:
-        # Used by the automatic builds: start the bundled app, then quit.
+        # Used by the automatic builds: start the bundled app, write a PSD
+        # (exercises PhotoshopAPI / numpy inside the bundle), then quit.
         app.processEvents()
         window.close()
+        _smoke_test_psd()
         sys.exit(0)
     sys.exit(app.exec())
 
