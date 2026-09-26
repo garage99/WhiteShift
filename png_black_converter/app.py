@@ -465,6 +465,11 @@ def main():
     apply_theme(app)
     window = MainWindow()
     window.show()
+    if "--smoke-test" in sys.argv:
+        # Used by the automatic builds: start the bundled app, then quit.
+        app.processEvents()
+        window.close()
+        sys.exit(0)
     sys.exit(app.exec())
 
 

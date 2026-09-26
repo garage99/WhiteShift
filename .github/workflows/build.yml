@@ -1,0 +1,76 @@
+name: Build
+
+on:
+  push:
+    branches: [main, ui-refresh-preview]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-14   # Apple Silicon
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest test_core.py test_ui.py
+      - name: Build WhiteShift.app
+        run: python -m PyInstaller --noconfirm --clean PNGWhiteConverter-macOS.spec
+      - name: Test bundled application
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: dist/WhiteShift.app/Contents/MacOS/WhiteShift --smoke-test
+      - name: Zip app
+        run: ditto -c -k --keepParent dist/WhiteShift.app dist/WhiteShift-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WhiteShift-macOS
+          path: dist/WhiteShift-macOS.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest test_core.py test_ui.py
+      - name: Build WhiteShift.exe
+        run: python -m PyInstaller --noconfirm --clean PNGWhiteConverter.spec
+      - name: Test bundled application
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $process = Start-Process -FilePath 'dist/WhiteShift.exe' -ArgumentList '--smoke-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Application test failed: $($process.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WhiteShift-Windows
+          path: dist/WhiteShift.exe
+          if-no-files-found: error
+          retention-days: 14

@@ -56,6 +56,10 @@ python png_black_converter\app.py
 python -m unittest test_core.py
 ```
 
+## 自動ビルド（GitHub Actions）
+
+`main` または `ui-refresh-preview` へpushすると、GitHub ActionsがMac版（Apple Silicon）とWindows版を自動でビルドします。テストと起動確認に通ったものが、GitHubの「Actions」タブ → 該当の実行 → Artifactsから `WhiteShift-macOS`（zip）と `WhiteShift-Windows` としてダウンロードできます（14日間保存）。未署名のため、Mac版は初回だけ右クリック→「開く」が必要です。
+
 ## Windows版 `.exe` の作成
 
 PyInstallerは別OS向けのクロスビルドに対応しないため、Windows 10/11上で作成してください。64-bit Python 3.11以上をインストールしたWindows PCで `build_windows.bat` をダブルクリックします。
