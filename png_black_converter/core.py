@@ -109,18 +109,19 @@ def _convert_psd(path: Path) -> ConvertedImage:
     if mode == "RGB":
         original = Image.fromarray(np.dstack((channels, alpha8)), "RGBA")
         result = Image.fromarray(np.dstack((converted_channels, alpha8)), "RGBA")
-    else:
-        original = _cmyk_preview(channels, alpha8)
-        result = _cmyk_preview(converted_channels, alpha8)
-
-    preview = np.array(result, copy=True)
-    preview[mask] = (0, 255, 255, 255)
     info = {}
     try:
         with Image.open(path) as source:
             info = dict(source.info)
     except Exception:
         pass
+    if mode == "CMYK":
+        profile = _cmyk_display_profile(info)
+        original = _cmyk_preview(channels, alpha8, profile)
+        result = _cmyk_preview(converted_channels, alpha8, profile)
+
+    preview = np.array(result, copy=True)
+    preview[mask] = (0, 255, 255, 255)
     return ConvertedImage(
         original,
         result,
@@ -150,9 +151,41 @@ def _convert_psd_pixels(
     return converted, mask
 
 
-def _cmyk_preview(channels: np.ndarray, alpha: np.ndarray) -> Image.Image:
-    cmyk = Image.fromarray(channels, "CMYK")
-    rgba = cmyk.convert("RGB").convert("RGBA")
+def _cmyk_display_profile(info: dict):
+    """CMYK profile used to show CMYK pixels on screen.
+
+    The PSD's embedded profile comes first (what Photoshop uses); otherwise
+    the system's default CMYK profile, matching Photoshop's working space.
+    """
+    profile = _embedded_profile(info)
+    if profile is not None:
+        return profile
+    fallback = default_cmyk_profile()
+    if fallback is not None:
+        try:
+            return ImageCms.getOpenProfile(str(fallback))
+        except Exception:
+            return None
+    return None
+
+
+def _cmyk_to_srgb(cmyk: Image.Image, profile) -> Image.Image:
+    if profile is None:
+        return cmyk.convert("RGB")  # No CMYK profile at all: naive fallback.
+    # Photoshop's default: Adobe ACE, relative colorimetric, black point compensation.
+    transform = ImageCms.buildTransform(
+        profile,
+        _srgb_profile(),
+        "CMYK",
+        "RGB",
+        renderingIntent=1,  # relative colorimetric
+        flags=0x2000,  # black point compensation (cmsFLAGS_BLACKPOINTCOMPENSATION)
+    )
+    return ImageCms.applyTransform(cmyk, transform)
+
+
+def _cmyk_preview(channels: np.ndarray, alpha: np.ndarray, profile=None) -> Image.Image:
+    rgba = _cmyk_to_srgb(Image.fromarray(channels, "CMYK"), profile).convert("RGBA")
     rgba.putalpha(Image.fromarray(alpha, "L"))
     return rgba
 
@@ -222,12 +255,8 @@ def _srgb_profile():
 def _save_rgb_png(converted: ConvertedImage, destination: Path) -> None:
     image = converted.image.convert("RGB")
     if converted.color_mode == "CMYK" and converted.psd_channels is not None:
-        source_profile = _embedded_profile(converted.source_info)
-        if source_profile:
-            cmyk = Image.fromarray(np.moveaxis(converted.psd_channels, 0, 2), "CMYK")
-            image = ImageCms.profileToProfile(
-                cmyk, source_profile, _srgb_profile(), outputMode="RGB"
-            )
+        cmyk = Image.fromarray(np.moveaxis(converted.psd_channels, 0, 2), "CMYK")
+        image = _cmyk_to_srgb(cmyk, _cmyk_display_profile(converted.source_info))
     alpha = converted.image.getchannel("A")
     if alpha.getextrema()[0] < 255:
         image.putalpha(alpha)

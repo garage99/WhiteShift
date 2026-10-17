@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import photoshopapi as psapi
-from PIL import Image
+from PIL import Image, ImageCms
 from psd_tools import PSDImage
 from psd_tools.constants import ColorMode, Resource
 
@@ -148,6 +148,25 @@ class ConversionTest(unittest.TestCase):
             layer = psapi.LayeredFile_8bit.read(str(destination)).flat_layers[0]
             data = layer.get_image_data()
             self.assertEqual([data[i][0, 0] for i in range(4)], [255, 255, 255, 252])
+
+    def test_cmyk_preview_uses_icc_profile(self):
+        candidates = [
+            Path("/System/Library/ColorSync/Profiles/Generic CMYK Profile.icc"),
+            Path("/usr/share/texlive/texmf-dist/tex/generic/colorprofiles/FOGRA39L_coated.icc"),
+        ]
+        profile_path = next((p for p in candidates if p.is_file()), None)
+        if profile_path is None:
+            self.skipTest("CMYK test profile is not installed")
+        from png_black_converter.core import _cmyk_preview
+        profile = ImageCms.getOpenProfile(str(profile_path))
+        # A dark rich grey like the brush background: C70 M60 Y55 K50.
+        grey = np.array([[[179, 153, 140, 128]]], dtype=np.uint8)
+        alpha = np.array([[255]], dtype=np.uint8)
+        r, g, b, _ = _cmyk_preview(grey, alpha, profile).getpixel((0, 0))
+        naive_r, naive_g, naive_b, _ = _cmyk_preview(grey, alpha).getpixel((0, 0))
+        # Colour-managed result stays close to neutral; the naive one is cyan-tinted.
+        self.assertLess(max(r, g, b) - min(r, g, b), 12)
+        self.assertGreater(max(naive_r, naive_g, naive_b) - min(naive_r, naive_g, naive_b), 12)
 
 
 if __name__ == "__main__":
